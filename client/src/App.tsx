@@ -1,9 +1,31 @@
 import AppBar from '@material-ui/core/AppBar';
 import { createStyles, makeStyles, Theme } from '@material-ui/core/styles';
 import Toolbar from '@material-ui/core/Toolbar';
+import Grid from "@material-ui/core/Grid";
+import Card from "@material-ui/core/Card";
 import Typography from '@material-ui/core/Typography';
-import React from 'react';
-import { ClientResponse, processRequest, ServerRequest, ServerResponse } from './optimization';
+import React, { FC } from 'react';
+import { ClientResponse, processRequest, ServerRequest, ServerResponse, processRequestOriginal } from './optimization';
+import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
+import { CardContent } from '@material-ui/core';
+
+const ReactHighcharts = require('react-highcharts');
+
+var incrementalRevenueInit:number[] = [0]
+var revenuePerDayInit:number[] = [0]
+var flowRateInInit:number[] = [0]
+var flowRateToOperationsInit:number[] = [0]
+var currentPitVolumeInit:number[] = [0]
+var maximumPitVolumeInit:number[] = [100000]
+
+function getAvg(array: any[]) {
+  if(array.length == 1){
+    return 0
+  }
+  const tempArray = array.slice(1)
+  const total = tempArray.reduce((acc, c) => acc + c, 0);
+  return total / tempArray.length;
+}
 
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
@@ -23,6 +45,13 @@ function App() {
   const [request, setRequest] = React.useState<null | ServerRequest>(null);
   const [result, setResult] = React.useState<null | ServerResponse>(null);
   const [response, setResponse] = React.useState<null | ClientResponse>(null);
+  const [responseOriginal, setResponseOriginal] = React.useState<null | ClientResponse>(null);
+  const [incrementalRevenue, setIncrementalRevenue] = React.useState(incrementalRevenueInit);
+  const [revenuePerDay, setRevenuePerDay] = React.useState(revenuePerDayInit);
+  const [flowRateIn, setFlowRateIn] = React.useState(flowRateInInit);
+  const [flowRateToOperations, setFlowRateToOperations] = React.useState(flowRateToOperationsInit);
+  const [currentPitVolume, setCurrentPitVolume] = React.useState(currentPitVolumeInit);
+  const [maximumPitVolume, setMaximumPitVolume] = React.useState(maximumPitVolumeInit);
 
   React.useEffect(() => {
     // const ws = new WebSocket('ws://localhost:9172');
@@ -45,10 +74,37 @@ function App() {
         const request: ServerRequest = JSON.parse(message.data);
         setRequest(request);
         const response = processRequest(request)
+        const responseOriginal = processRequest(request)
         setResponse(response)
+        setResponseOriginal(responseOriginal)
         ws.send(JSON.stringify(response));
       } else if (data.type === "OPTIMATION_RESULT") {
         const response: ServerResponse = JSON.parse(message.data);
+        
+        console.log(response);
+
+        incrementalRevenue.push(response.incrementalRevenue)
+        setIncrementalRevenue(incrementalRevenue)
+        
+        revenuePerDay.push(response.revenuePerDay)
+        setRevenuePerDay(revenuePerDay)
+
+        flowRateIn.push(response.flowRateIn)
+        setFlowRateIn(flowRateIn)
+
+        flowRateToOperations.push(response.flowRateToOperations)
+        setFlowRateToOperations(flowRateToOperations)
+
+        if(response.currentPitVolume){
+          currentPitVolume.push(response.currentPitVolume)
+          setCurrentPitVolume(currentPitVolume)
+        }
+
+        if(response.maximumPitVolume){
+          maximumPitVolume.push(response.maximumPitVolume)
+          setMaximumPitVolume(maximumPitVolume)
+        }
+
         setResult(response);
       }
     });
@@ -81,6 +137,77 @@ function App() {
         <div>3.) Server Sends Result:</div>
         <textarea rows={10} cols={150} value={JSON.stringify(result, undefined, 2)}/>
       </div>
+
+      <Grid container spacing={1} style={{textAlign: "center",}}>
+        <Grid item xs={12} sm={12} md={4} className='text-center'>
+          <Card elevation={6}>
+            <CardContent>
+              <h1>Revenue Per Day</h1>
+              <h2>$ {Number((revenuePerDay[revenuePerDay.length-1]).toFixed(2))}</h2>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} sm={12} md={4}>
+          <Card elevation={6}>
+            <CardContent>
+              <h1>Average Flow Rate In</h1>
+              <h2>$ {Number((getAvg(flowRateIn)).toFixed(2))}</h2>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} sm={12} md={4}>
+          <Card elevation={6}>
+            <CardContent>
+              <h1>Average Flow Rate to Operations</h1>
+              <h2>$ {Number((getAvg(flowRateToOperations)).toFixed(2))}</h2>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} sm={12} md={9}>
+          <Card elevation={6}>
+            <CardContent>
+              <ReactHighcharts config = {{
+                title: {text: 'Incremental Revenue'},
+                series: [{name: 'Revenue', data: incrementalRevenue}], 
+                yAxis:{title: {text: 'Revenue (in $)'}},
+                xAxis:{title: {text: 'Time'}}
+              }}></ReactHighcharts>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} sm={12} md={3}>
+          <Card elevation={6}>
+            <CardContent>
+              {/* <h1>Pit Capacity</h1> */}
+              <ReactHighcharts config = {{
+                chart: {plotBackgroundColor: null,plotBorderWidth: null,plotShadow: false,type: 'pie'},
+                tooltip: {pointFormat: '{series.name}: <b>{point.percentage:.4f}%</b>'},
+                accessibility: {point: {valueSuffix: '%'}},
+                title: {text: 'Pit Capacity'},
+                series: [{name: 'Status',colorByPoint: true, data: [{name:'Water', y:currentPitVolume[currentPitVolume.length - 1]}, {name:'Empty', y:maximumPitVolume[maximumPitVolume.length - 1] - currentPitVolume[currentPitVolume.length - 1]}]}], 
+              }}></ReactHighcharts>
+              <h2>$ {Number((currentPitVolume[currentPitVolume.length - 1]).toFixed(2))}</h2>
+              <h2>$ {Number((maximumPitVolume[maximumPitVolume.length - 1]).toFixed(2))}</h2>
+            </CardContent>
+          </Card>
+        </Grid>
+        {/* <Grid item xs={12} sm={12} md={9}>
+          <Card elevation={6}>
+            <CardContent>
+              <ReactHighcharts config = {{
+                title: {text: 'Revenue Structure'},
+                series: [{name: 'Revenue', data: request.operations}], 
+                yAxis:{title: {text: 'Revenue (in $)'}},
+                xAxis:{title: {text: 'Time'}}
+              }}></ReactHighcharts>
+            </CardContent>
+          </Card>
+        </Grid> */}
+      </Grid>
+      
+      {/* <ReactHighcharts config = {{title: {text: 'revenuePerDay chart'},series: [{name: 'Revenue Per Day', data: revenuePerDay}], yAxis:{title: {text: 'Revenue (in $)'}}}}></ReactHighcharts> */}
+      {/* <ReactHighcharts config = {{title: {text: 'flowRateIn chart'},series: [{data: flowRateIn}]}}></ReactHighcharts> */}
+      {/* <ReactHighcharts config = {{title: {text: 'flowRateToOperations chart'},series: [{data: flowRateToOperations}]}}></ReactHighcharts> */}
     </div>
   );
 }

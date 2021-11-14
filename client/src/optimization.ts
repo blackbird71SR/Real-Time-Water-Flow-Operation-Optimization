@@ -35,6 +35,16 @@ interface Sol {
   flowRate: number;
 }
 
+export function processRequestOriginal(request: ServerRequest): ClientResponse {
+  const evenDistribution = request.flowRateIn / request.operations.length;
+  return request.operations.map(operation => {
+    return {
+      operationId: operation.id,
+      flowRate: evenDistribution - 10,
+    }
+  })
+}
+
 // You should do better!
 export function processRequest(request: ServerRequest): ClientResponse {
   var flowRateIn = request.flowRateIn;
@@ -70,8 +80,8 @@ export function processRequest(request: ServerRequest): ClientResponse {
   }
 
   flowRateArray.sort((a, b) => (a.ratio > b.ratio) ? -1 : 1)
-  console.log(flowRateArray);
-  console.log(freeMoney)
+  // console.log(flowRateArray);
+  // console.log(freeMoney)
 
   var flow = flowRateIn;
   if(flow >= flowRateArray[0]["flowPerDay"]){
@@ -83,8 +93,8 @@ export function processRequest(request: ServerRequest): ClientResponse {
     if (flow >= flowRateArray[i]["flowPerDay"] &&(flow > 0)) {
       let j : number
       for(j = 0; j < solution_array.length; j++){
-        console.log("start")
-        console.log(i,j)
+        // console.log("start")
+        // console.log(i,j)
          if(flowRateArray[i]["operationId"] == solution_array[j]["operationId"]){
            console.log("True")
            let sum : number = 0 
@@ -93,7 +103,7 @@ export function processRequest(request: ServerRequest): ClientResponse {
            break
          }
          else{
-           console.log("False")
+          //  console.log("False")
          }
       }
       if (j == solution_array.length){
@@ -102,7 +112,7 @@ export function processRequest(request: ServerRequest): ClientResponse {
       flow = flow - flowRateArray[i]["flowPerDay"]
     }
   }
-  console.log(operations.length)
+  // console.log(operations.length)
 
 
   for (let i = 0; i < operations.length; i++) {
@@ -118,8 +128,8 @@ export function processRequest(request: ServerRequest): ClientResponse {
     }
     }
   
-  console.log(solution_array.length)
-  console.log(solution_array)
+  // console.log(solution_array.length)
+  // console.log(solution_array)
 
   return solution_array
 
