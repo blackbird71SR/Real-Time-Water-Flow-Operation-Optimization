@@ -1,3 +1,4 @@
+import { PassThrough } from "stream";
 
 export interface Point {
   flowPerDay: number,
@@ -45,14 +46,24 @@ export function processRequestOriginal(request: ServerRequest): ClientResponse {
   })
 }
 
+var avg_ratio : number = 0.0
+var pit_flag : boolean = false
+var pit_size : number = 100000
+var pit_water : number = 0
+
+// ws.addEventListener('open',  ()  =>  {
+// 	ws.send(JSON.stringify({setPitCapacity:  100000}));
+// })
+
+
 // You should do better!
 export function processRequest(request: ServerRequest): ClientResponse {
-  var flowRateIn = request.flowRateIn;
+  var flowRateIn = request.flowRateIn + pit_water;
   var operations = request.operations;
 
   var flowRateArray = [];
   var freeMoney = [];
-  var solution: { [id: string]: Sol; }
+
   var solution_array : ClientResponse = []
 
   for (let i = 0; i < operations.length; i++) {
@@ -68,12 +79,16 @@ export function processRequest(request: ServerRequest): ClientResponse {
           "dollorsperDay":revenueStructure[j].dollarsPerDay,
           "ratio": revenueStructure[j].dollarsPerDay
         })
-      } else if ((revenueStructure[j].flowPerDay != 0) && (revenueStructure[j].dollarsPerDay > 0)) {
+      } else if ((revenueStructure[j].flowPerDay != 0)) {
+            var r : number = revenueStructure[j].dollarsPerDay/ revenueStructure[j].flowPerDay
+            if((revenueStructure[j].dollarsPerDay > 0)){
+              avg_ratio = (avg_ratio + r)/2;
+            }
             flowRateArray.push({
             "operationId": operationId,
             "flowPerDay": revenueStructure[j].flowPerDay,
             "dollorsperDay":revenueStructure[j].dollarsPerDay,
-            "ratio": revenueStructure[j].dollarsPerDay/ revenueStructure[j].flowPerDay
+            "ratio": r
             })
         }
     }
@@ -89,22 +104,33 @@ export function processRequest(request: ServerRequest): ClientResponse {
     flow = flow - flowRateArray[0]["flowPerDay"]
   }
 
-  for (let i = 1; i < flowRateArray.length; i++) {
+  var end_intake_index : number = -1
+  var i : number = 0
+  for (i = 1; i < flowRateArray.length; i++) {
     if (flow >= flowRateArray[i]["flowPerDay"] &&(flow > 0)) {
       let j : number
+      if(pit_flag){
+        if((flowRateArray[i]["ratio"] < (avg_ratio/2)) && ((pit_size - pit_water) >= flowRateArray[i]["flowPerDay"])){
+          pit_water = pit_water + flowRateArray[i]["flowPerDay"]
+          end_intake_index = i - 1
+          flow = flow - flowRateArray[i]["flowPerDay"]
+          break
+        }
+      }
+
       for(j = 0; j < solution_array.length; j++){
         // console.log("start")
         // console.log(i,j)
          if(flowRateArray[i]["operationId"] == solution_array[j]["operationId"]){
-           console.log("True")
+           //console.log("True")
            let sum : number = 0 
            sum = flowRateArray[i]["flowPerDay"] + solution_array[j]["flowRate"]
            solution_array[j]["flowRate"] = sum;
            break
          }
-         else{
+         //else{
           //  console.log("False")
-         }
+         //}
       }
       if (j == solution_array.length){
         solution_array.push({"operationId":flowRateArray[i]["operationId"],"flowRate":flowRateArray[i]["flowPerDay"]});
@@ -112,9 +138,52 @@ export function processRequest(request: ServerRequest): ClientResponse {
       flow = flow - flowRateArray[i]["flowPerDay"]
     }
   }
-  // console.log(operations.length)
+  end_intake_index = i - 1
+  console.log(operations.length)
 
+  // Code : Fractional residual ( Pit redirection - if available)
+  if(flow > 0){
+    if(!pit_flag){
+      //Whole negative
+      var i : number 
+      for (i = end_intake_index + 1; i < flowRateArray.length; i++) {
+        if ((flow >= flowRateArray[i]["flowPerDay"]) && (flow > 0)){
+          let j : number
+          for(j = 0; j < solution_array.length; j++){
+            // console.log("start")
+            // console.log(i,j)
+             if(flowRateArray[i]["operationId"] == solution_array[j]["operationId"]){
+               //console.log("True")
+               let sum : number = 0 
+               sum = flowRateArray[i]["flowPerDay"] + solution_array[j]["flowRate"]
+               solution_array[j]["flowRate"] = sum;
+               break
+             }
+          }
+          if (j == solution_array.length){
+              solution_array.push({"operationId":flowRateArray[i]["operationId"],"flowRate":flowRateArray[i]["flowPerDay"]});
+          }
+          flow = flow - flowRateArray[i]["flowPerDay"]
+        }
+      }
+      end_intake_index = i - 1      
+      }
+    else{
+      if((pit_size - pit_water) >= flow){
+        pit_water = pit_water + flow;
+        flow = 0
+      }
+      else{
+        flow = flow - (pit_size - pit_water)
+        pit_water = pit_size;
+      }
+    }
+  }
 
+  var min_rev_save : string = flowRateArray[end_intake_index].operationId
+  var index : number = end_intake_index
+
+  // Code : Zero distributions
   for (let i = 0; i < operations.length; i++) {
     var flag = 0
     for(let j = 0; j < solution_array.length; j++){
@@ -123,13 +192,21 @@ export function processRequest(request: ServerRequest): ClientResponse {
         break
       }
     }
-    if (flag == 0){
+      if (flag == 0){
       solution_array.push({"operationId":operations[i].id,"flowRate":0});
+      min_rev_save = operations[i].id
+      index = i
     }
     }
-  
-  // console.log(solution_array.length)
-  // console.log(solution_array)
+    
+    if ((flow != 0) && (!pit_flag)){
+      var temp : number = solution_array[index]["flowRate"]
+      temp = temp + flow
+      solution_array[index] = {"operationId":min_rev_save,"flowRate":temp};  
+    }
+
+  console.log(solution_array.length)
+  console.log(solution_array)
 
   return solution_array
 
